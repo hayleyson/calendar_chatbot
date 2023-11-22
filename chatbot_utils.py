@@ -63,7 +63,8 @@ class CalendarChatGPT:
         "I have a meeting with Selena Gomez tomorrow at 2PM. Please create a schedule.\n"
         "Examples of (3): \n"
         "I have a conference talk next Thursday. Can you plan what I should do to prepare for it?\n"
-        "I have a computing 2 homework due on 11/30. Create a study schedule for me."
+        "I have a computing 2 homework due on 11/30. Create a study schedule for me.\n"
+        "Can you help me plan for a paper submission due 12/1?\n"
     )
     
     print(">>===========================================")
@@ -84,49 +85,6 @@ class CalendarChatGPT:
 
     return response
   
-  def _prompt_detect_date(self, text):
-    user_prompt = ("""Do not respond yet. """
-"""Detect any time-related phrase from the given input from the user and resolve it into a date in the format of YYYY/MM/DD and the date after that day YYYY/MM/DD+1day.
-Examples include today, tomorrow, this Wednesday, next Tuesday, last Friday, 11/13, November 5th, 13th of July.
-When the detected word is day of week, make sure to include adjective in front of it such as "this", "next", "upcoming", "last", "past".
-\n\n
-Your output must be in JSON format. {"detected_phrase": <detected phrase>, "date": <YYYY/MM/DD>, "date_after_date": <YYYY/MM/DD>}
-\n\n
-Example 1
-Input: Today is 2023/1/2. ... I want to schedule a meeting at 5PM tomorrow.
-Output: {"detected_phrase": "tomorrow", "date": "2023/1/3", "date_after_date": "2023/1/4"}
-
-Example 2
-Input: Today is 2023/1/2. ... What time does the class start next Friday?
-Output: {"detected_phrase": "next Friday", "date": "2023/1/13", "date_after_date": "2023/1/14"}
-
-Example 3
-Input: Today is 2023/1/2. ... What is the date of this upcoming Friday?
-Output: {"detected_phrase": "this upcoming Friday", "date": "2023/1/6", "date_after_date": "2023/1/7"}
-"""
-f"\n\nInput: Today is {datetime.datetime.today().date()}. ... {text}")
-    self.messages.append({
-        "role": "user",
-        "content": user_prompt,
-    })
-
-    # Call ChatGPT
-    response = self.call()
-    message = response.choices[0].message.content
-    
-    # some cleansing if needed
-    if 'json' in message:
-      message = re.findall(r"(?<=```json)[\S\s]*(?=```)", message)[0]
-      message = message.strip()
-      
-    init_result = json.loads(message)
-    
-    date_expression = init_result['detected_phrase'] # detected_phrase
-    date_min = init_result['date'] #date
-    date_max = init_result['date_after_date'] #date+1
-    
-    return date_expression, date_min, date_max
-
   
   def _prompt_add_calendar(self, text):
     # Call ChatGPT for intent classification
@@ -195,7 +153,8 @@ f"\nToday is {datetime.datetime.today().date()}"
       del message_json['timeZone']
       del message_json['attendeesEmail']
       
-      # print(f"message: {message}")
+      print(">>===========================================")
+      print("Adding the event to the calendar...")
       event = self.service.events().insert(calendarId=self.calendarId, body=message_json).execute()
       
       return 'Event created: %s' % (event.get('htmlLink'))
@@ -204,21 +163,70 @@ f"\nToday is {datetime.datetime.today().date()}"
       print("Error occurred! ")
       
       return None
+
+
+  def _prompt_detect_date(self, text):
+    user_prompt = ("""Do not respond yet. """
+"""Detect any time-related phrase from the given input from the user and resolve it into a date in the format of YYYY/MM/DD and the date after that day YYYY/MM/DD+1day.
+Examples include today, tomorrow, this Wednesday, next Tuesday, last Friday, 11/13, November 5th, 13th of July.
+When the detected word is day of week, make sure to include adjective in front of it such as "this", "next", "upcoming", "last", "past".
+\n\n
+Your output must be in JSON format. {"detected_phrase": <detected phrase>, "date": <YYYY/MM/DD>, "date_after_date": <YYYY/MM/DD>}
+\n\n
+Example 1
+Input: Today is 2023/1/2. ... I want to schedule a meeting at 5PM tomorrow.
+Output: {"detected_phrase": "tomorrow", "date": "2023/1/3", "date_after_date": "2023/1/4"}
+
+Example 2
+Input: Today is 2023/1/2. ... What time does the class start next Friday?
+Output: {"detected_phrase": "next Friday", "date": "2023/1/13", "date_after_date": "2023/1/14"}
+
+Example 3
+Input: Today is 2023/1/2. ... What is the date of this upcoming Friday?
+Output: {"detected_phrase": "this upcoming Friday", "date": "2023/1/6", "date_after_date": "2023/1/7"}
+"""
+f"\n\nInput: Today is {datetime.datetime.today().date()}. ... {text}")
+    self.messages.append({
+        "role": "user",
+        "content": user_prompt,
+    })
+
+    print(">>===========================================")
+    print("[Prompt for detecting date-related expression]")
+    print(user_prompt)
+      
+    # Call ChatGPT
+    response = self.call()
+    message = response.choices[0].message.content
     
+    # some cleansing if needed
+    if 'json' in message:
+      message = re.findall(r"(?<=```json)[\S\s]*(?=```)", message)[0]
+      message = message.strip()
+      
+    init_result = json.loads(message)
+    
+    date_expression = init_result['detected_phrase'] # detected_phrase
+    date_min = init_result['date'] #date
+    date_max = init_result['date_after_date'] #date+1
+    
+    print("[Detected date]")
+    print(date_expression, date_min)
+      
+    return date_expression, date_min, date_max
+
+
   def _prompt_summarize_calendar(self, text):
     
-    print("!!!!!!")
     date_expression, date_min, date_max = self._prompt_detect_date(text)
-    print("@@@@@@@")
-    print(">>===========================================")
-    print("[Detected dates]")
-    print(date_expression, date_min, date_max)
     
     date_min = parser.parse(date_min)
     date_min = date_min.isoformat().split('+')[0] + "Z"
     date_max = parser.parse(date_max)
     date_max = date_max.isoformat().split('+')[0] + "Z"
-    
+
+    print(">>===========================================")
+    print("Sending request to Google Calendar API...")
     event_list = calendar_utils.get_event_list_recent(self.service, timeMin=date_min, timeMax=date_max)
     
     # only take the necessary keys in the fetched event info
@@ -258,8 +266,6 @@ f"\nToday is {datetime.datetime.today().date()}"
     \n\nOutput: \
     '''
 
-    print(input_text)
-
     self.messages.append({
         "role": "user",
         "content": input_text,
@@ -280,7 +286,7 @@ f"\nToday is {datetime.datetime.today().date()}"
     message_dict = literal_eval(message_dict)
 
     output_string = ''
-    output_string +="You have total {0} schedules for {1}, {2}.".format(len(message_dict['schedule']), date_expression, date_min[:10])
+    output_string +="You have total {0} schedules for {1}, {2}.\n".format(len(message_dict['schedule']), date_expression, date_min[:10])
     for i in range(len(message_dict['schedule'])):
         output_string+= "schedule {0} is {1}. Start time ⏰ is {2}. ".format(i, message_dict['schedule'][i]['summary'], message_dict['schedule'][i]['start_time'])
         if message_dict['schedule'][i]['Location'] != '':
@@ -316,13 +322,15 @@ f"\nToday is {datetime.datetime.today().date()}"
       new_json['end'] = dict(dateTime=old_json['End Time'],
                              timeZone=old_json['timeZone'])
       reformat_message_json.append(new_json)
-    
+
+    print(">>===========================================")
+    print("Adding events to the calender...")
     for i, schedule in enumerate(reformat_message_json):
-      print(schedule)
+      print(f"{i}th event done")
       event = self.service.events().insert(calendarId=self.calendarId, body=schedule).execute()
       message_json[i]['URL'] = event.get('htmlLink')
       
-    return "I made a plan as following and added them to your schedule\n\n" + json.dumps(message_json)
+    return "I made a plan as following and added them to your schedule\n\n" + json.dumps(message_json, indent=4)
 
   def prompt(self, text) -> str:
     
@@ -343,7 +351,6 @@ f"\nToday is {datetime.datetime.today().date()}"
       return self._prompt_plan_and_add_calendar(text)
     
     else:
-      ## ??
       self.messages.append({
         "role": "user",
         "content": text,
@@ -397,6 +404,9 @@ f"\nToday is {datetime.datetime.today().date()}"
   ###User Input:
   """
     input_text += user_text
+    print(">>===========================================")
+    print("[Prompt for extracting information from user request.]")
+    print(input_text)
 
     self.messages.append({
         "role": "user",
@@ -405,7 +415,7 @@ f"\nToday is {datetime.datetime.today().date()}"
 
     response = self.call()
     message = response.choices[0].message.content
-    print(f"!!!! message{message}")
+      
     # some cleansing if needed
     if 'json' in message:
       message = re.findall(r"(?<=```json)[\S\s]*(?=```)", message)[0]
@@ -415,12 +425,13 @@ f"\nToday is {datetime.datetime.today().date()}"
 
     formatted_string = f"Target Task: {init_result['target task']},\nTarget Time: {init_result['target time']},\nMaximum number of detailed tasks: {init_result['maximum number of detailed tasks']}"
 
+    print("[Extracted information from the user request.]")
     print(formatted_string)
 
     return formatted_string
 
   def create_schedule_dialogue_gpt_call(self, formatted_string):
-    input_text = f"""###Instruction : Please assist in optimized schedule management. As a 'Schedule Management Application', you act to suggest necessary tasks for work input by users, manage time effectively, and aid in overall productivity enhancement. The 'Schedule Management Application' performs the following roles for the "Target Task" and "Target Time" input by the user:
+    input_text = """###Instruction : Please assist in optimized schedule management. As a 'Schedule Management Application', you act to suggest necessary tasks for work input by users, manage time effectively, and aid in overall productivity enhancement. The 'Schedule Management Application' performs the following roles for the "Target Task" and "Target Time" input by the user:
 
 Create the required subtasks for the 'Target Task'. Distribute the required subtasks for the 'Target Task' appropriately by 'Target Time'. Finally, the assistant outputs the distribution of detailed tasks by 'Target Time' in JSON format.
 
@@ -431,7 +442,6 @@ Restrictions:
 4. Assistant only outputs JSON.
 5. You must strictly follow the json format presented in the example.
 6. Create as many detailed tasks as the suggested Maximum number of detailed tasks.
-
 Considerations: 
 1. You must consider the entire duration of the given schedule and distribute tasks so that they are not concentrated on specific days. Be sure to not concentrate your work on a specific day or time. 
 2. The time allotted for a single detailed tasks must be no more than 3 hours.
@@ -486,7 +496,10 @@ Assistant Output(Should be JSON format):
     formatted_date = current_date.strftime("Today is %B %d, %Y.")
     
     input_text = input_text + formatted_date + "\n" + formatted_string
-    
+
+    print(">>===========================================")
+    print("[Prompt for creating a plan according to user request.]")
+    print(input_text)
     
     self.messages.append({
         "role": "user",
@@ -502,8 +515,6 @@ Assistant Output(Should be JSON format):
       message = re.findall(r"(?<=```json)[\S\s]*(?=```)", message)[0]
       message = message.strip()
     init_result = json.loads(message)
-    
-    print(message)
 
     return init_result
 
@@ -513,7 +524,7 @@ Assistant Output(Should be JSON format):
 def run_console(chatgpt):
     while True:
         # Receive user input
-        prompt = input("User: ")
+        prompt = input("👩🏻‍🦰 User: ")
 
         # Exit the loop if the user entered "exit"
         if prompt == "exit":
@@ -521,7 +532,7 @@ def run_console(chatgpt):
 
         # Receive and display ChatGPT response
         response = chatgpt.prompt(prompt)
-        print("ChatGPT:", response)
+        print("🤖 ChatGPT:", response)
     print("The chat has ended")
     
     
