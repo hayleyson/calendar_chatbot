@@ -44,9 +44,9 @@ def get_calendar_service():
     print(f"An error occurred: {error}")
     return None
 
-def get_event_list_recent(**kwargs):
+def get_event_list_recent(service, **kwargs):
   
-  service = get_calendar_service()
+  # service = get_calendar_service()
   
   if service:
     try:
@@ -71,10 +71,10 @@ def get_event_list_recent(**kwargs):
         print("No upcoming events found.")
         return
 
-      # Prints the start and name of the next 10 events
-      for event in events:
-        start = event["start"].get("dateTime", event["start"].get("date"))
-        print(start, event["summary"])
+      # # Prints the start and name of the next 10 events
+      # for event in events:
+      #   start = event["start"].get("dateTime", event["start"].get("date"))
+      #   print(start, event["summary"])
       return events
 
     except HttpError as error:
